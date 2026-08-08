@@ -48,7 +48,7 @@ def write_server_file(file_path: str, content: str) -> str:
         file_path = "/" + file_path
 
     url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/write"
-    write_headers = {HEADERS, "Content-Type": "text/plain"}
+    write_headers = {**HEADERS, "Content-Type": "text/plain"}
 
     response = requests.post(
         url, 
