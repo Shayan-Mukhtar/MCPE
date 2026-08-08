@@ -34,8 +34,7 @@ def read_server_file(file_path: str) -> str:
     if not file_path.startswith("/"): 
         file_path = "/" + file_path
 
-    url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/
-contents"
+     url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/contents"
     response = requests.get(url, headers=HEADERS, params={"file": file_path})
 
     if response.status_code == 200:
