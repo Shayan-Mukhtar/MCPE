@@ -126,12 +126,13 @@ def delete_server_file(file_path: str) -> str:
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3001))
 
-    print(f"Starting MCP server on port {port}...")
+    print(f"Starting MCP server on 0.0.0.0:{port}...")
     print(f"Panel URL configured: {bool(PANEL_URL)}")
     print(f"API key configured: {bool(API_KEY)}")
     print(f"Server ID configured: {bool(SERVER_ID)}")
 
     mcp.run(
         transport="streamable-http",
+        host="0.0.0.0",
         port=port,
     )
