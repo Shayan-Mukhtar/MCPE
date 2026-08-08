@@ -125,6 +125,12 @@ def delete_server_file(file_path: str) -> str:
 # Default to 3001 if PORT isn't found.
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3001))
+
+    print(f"Starting MCP server on port {port}...")
+    print(f"Panel URL configured: {bool(PANEL_URL)}")
+    print(f"API key configured: {bool(API_KEY)}")
+    print(f"Server ID configured: {bool(SERVER_ID)}")
+
     mcp.run(
         transport="streamable-http",
         port=port,
