@@ -4,6 +4,7 @@ from mcp.server import MCPServer
 
 mcp = MCPServer("Pterodactyl Admin Server")
 
+# These pull from Render securely, so your keys aren't in the code!
 PANEL_URL = os.environ.get("PANEL_URL")
 API_KEY = os.environ.get("API_KEY")
 SERVER_ID = os.environ.get("SERVER_ID")
@@ -33,7 +34,8 @@ def read_server_file(file_path: str) -> str:
     if not file_path.startswith("/"): 
         file_path = "/" + file_path
 
-    url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/contents"
+    url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/
+contents"
     response = requests.get(url, headers=HEADERS, params={"file": file_path})
 
     if response.status_code == 200:
@@ -53,8 +55,7 @@ def write_server_file(file_path: str, content: str) -> str:
     response = requests.post(
         url, 
         headers=write_headers, 
-        params={"file":
-file_path}, 
+        params={"file": file_path}, 
         data=content.encode('utf-8')
     )
     if response.status_code == 204:
@@ -68,6 +69,7 @@ def delete_server_file(file_path: str) -> str:
     if not file_path.startswith("/"): 
         file_path = "/" + file_path
 
+# Pterodactyl's delete API requires separating the folder path and the file name
     root_dir = os.path.dirname(file_path)
     file_name = os.path.basename(file_path)
 
@@ -92,5 +94,6 @@ def delete_server_file(file_path: str) -> str:
 
 if name == "main":
     # Render assigns a dynamic port automatically, defaulting to 3001 if none is found
-    port = int(os.environ.get("PORT", 3001))
+    port =
+int(os.environ.get("PORT", 3001))
     mcp.run(transport="streamable-http", port=port)
