@@ -20,11 +20,10 @@ def run_console_command(command: str) -> str:
     url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/command"
     response = requests.post(
         url, 
-        headers={**HEADERS, "Content-Type": "application/json"}, 
+        headers={HEADERS, "Content-Type": "application/json"}, 
         json={"command": command}
     )
-    if response.status_code ==
-204:
+    if response.status_code == 204:
         return "Command executed successfully."
     else:
         return f"Failed to execute command: {response.text}"
@@ -50,12 +49,13 @@ def write_server_file(file_path: str, content: str) -> str:
         file_path = "/" + file_path
 
     url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/write"
-    write_headers = {**HEADERS, "Content-Type": "text/plain"}
+    write_headers = {HEADERS, "Content-Type": "text/plain"}
 
     response = requests.post(
         url, 
         headers=write_headers, 
-        params={"file": file_path}, 
+        params={"file":
+file_path}, 
         data=content.encode('utf-8')
     )
     if response.status_code == 204:
@@ -65,10 +65,10 @@ def write_server_file(file_path: str, content: str) -> str:
 
 @mcp.tool()
 def delete_server_file(file_path: str) -> str:
-    """Delete a file or
-folder from the Minecraft server."""
+    """Delete a file or folder from the Minecraft server."""
     if not file_path.startswith("/"): 
         file_path = "/" + file_path
+
 Pterodactyl's delete API requires separating the folder path and the file name
     root_dir = os.path.dirname(file_path)
     file_name = os.path.basename(file_path)
