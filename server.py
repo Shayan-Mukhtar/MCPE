@@ -19,7 +19,7 @@ def run_console_command(command: str) -> str:
     url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/command"
     response = requests.post(
         url, 
-        headers={HEADERS, "Content-Type": "application/json"}, 
+        headers={*HEADERS, "Content-Type": "application/json"*}, 
         json={"command": command}
     )
     if response.status_code == 204:
