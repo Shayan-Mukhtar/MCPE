@@ -4,7 +4,6 @@ from mcp.server import MCPServer
 
 mcp = MCPServer("Pterodactyl Admin Server")
 
-These pull from Render securely, so your keys aren't in the code!
 PANEL_URL = os.environ.get("PANEL_URL")
 API_KEY = os.environ.get("API_KEY")
 SERVER_ID = os.environ.get("SERVER_ID")
@@ -69,7 +68,6 @@ def delete_server_file(file_path: str) -> str:
     if not file_path.startswith("/"): 
         file_path = "/" + file_path
 
-Pterodactyl's delete API requires separating the folder path and the file name
     root_dir = os.path.dirname(file_path)
     file_name = os.path.basename(file_path)
 
