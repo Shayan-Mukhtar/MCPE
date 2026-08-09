@@ -16,8 +16,7 @@ HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
     "Accept": "application/json",
 }
-MODRINTH_API =
-"https://api.modrinth.com/v2"
+MODRINTH_API = "https://api.modrinth.com/v2"
 # -----------------------------------------
 ----------------------------------
 # Console
