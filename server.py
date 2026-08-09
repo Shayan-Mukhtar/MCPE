@@ -4,7 +4,7 @@ import requests
 from mcp.server import MCPServer
 mcp = MCPServer("Pterodactyl Admin Server")
 # These are pulled from Render securely, so
-your keys aren't in the code!
+# your keys aren't in the code!
 # .rstrip("/") guards against a trailing
 slash in PANEL_URL causing double-slash
 404s.
