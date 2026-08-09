@@ -6,8 +6,8 @@ mcp = MCPServer("Pterodactyl Admin Server")
 # These are pulled from Render securely, so
 # your keys aren't in the code!
 # .rstrip("/") guards against a trailing
-slash in PANEL_URL causing double-slash
-404s.
+# slash in PANEL_URL causing double-slash
+# 404s.
 PANEL_URL = os.environ.get("PANEL_URL",
 "").rstrip("/")
 API_KEY = os.environ.get("API_KEY")
