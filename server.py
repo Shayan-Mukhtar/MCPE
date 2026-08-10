@@ -1,6 +1,7 @@
 import os
 import base64
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from mcp.server import MCPServer
 
 mcp = MCPServer("Pterodactyl Admin Server")
@@ -98,21 +99,40 @@ def get_server_status() -> str:
 # Files - text
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
-def read_server_file(file_path: str, lines: int = 0, max_chars: int = 20000) -> str:
-    """Read a text file from the server (e.g., /server.properties or /logs/latest.log).
+def _collapse_repeated_lines(text: str) -> str:
+    """Collapse runs of identical consecutive lines into a single line + count.
+    Minecraft logs especially tend to spam the same warning/error repeatedly,
+    which burns tokens for no extra information."""
 
-    By default this returns only the END of the file, capped at max_chars characters,
-    to avoid flooding the conversation with huge logs. Pass lines > 0 to instead return
-    just the last N lines of the file. Pass max_chars=0 for no character cap (full file).
-    """
+    lines = text.split("\n")
+    out = []
+    i = 0
+    while i < len(lines):
+        j = i
+        while j < len(lines) and lines[j] == lines[i]:
+            j += 1
+        run_len = j - i
+        if run_len >= 3:
+            out.append(f"{lines[i]}  [x{run_len} repeated]")
+        else:
+            out.extend(lines[i:j])
+        i = j
+    return "\n".join(out)
+
+
+def _fetch_and_truncate_file(file_path: str, lines: int = 0, max_chars: int = 4000) -> str:
+    """Shared logic: fetch a single file's contents, collapse repeated lines, and
+    truncate per lines/max_chars rules to keep output compact."""
 
     if not file_path.startswith("/"):
         file_path = "/" + file_path
 
     url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/contents"
 
-    response = requests.get(url, headers=HEADERS, params={"file": file_path})
+    try:
+        response = requests.get(url, headers=HEADERS, params={"file": file_path}, timeout=30)
+    except Exception as e:
+        return f"Failed to read file: {e}"
 
     if response.status_code != 200:
         return f"Failed to read file: {response.text}"
@@ -124,20 +144,70 @@ def read_server_file(file_path: str, lines: int = 0, max_chars: int = 20000) -> 
         split_lines = content.splitlines()
         truncated = len(split_lines) > lines
         selected = split_lines[-lines:]
-        result = "\n".join(selected)
+        result = _collapse_repeated_lines("\n".join(selected))
         if truncated:
-            result = f"...[truncated, showing last {lines} lines of {len(split_lines)}]...\n" + result
+            result = f"...[{len(split_lines) - lines} earlier lines omitted]...\n" + result
         return result
 
     if max_chars and original_len > max_chars:
         tail = content[-max_chars:]
-        return (
-            f"...[truncated, showing last {max_chars} of {original_len} characters. "
-            f"Use lines=N for a specific number of lines, or max_chars=0 for the full file]...\n"
-            f"{tail}"
-        )
+        tail = _collapse_repeated_lines(tail)
+        return f"...[{original_len - max_chars} earlier chars omitted]...\n{tail}"
 
-    return content
+    return _collapse_repeated_lines(content)
+
+
+@mcp.tool()
+def read_server_file(file_path: str, lines: int = 0, max_chars: int = 4000) -> str:
+    """Read a text file from the server (e.g., /server.properties or /logs/latest.log).
+
+    Token-efficient by default: returns only the END of the file capped at max_chars
+    characters (default 4000, tune lower/higher as needed), and collapses runs of
+    3+ identical consecutive lines (common in spammy logs) into one line + a count.
+    Pass lines > 0 to instead return just the last N lines. Pass max_chars=0 for the
+    full file (use sparingly - can consume a lot of tokens).
+    """
+    return _fetch_and_truncate_file(file_path, lines=lines, max_chars=max_chars)
+
+
+@mcp.tool()
+def read_server_files(file_paths: list[str], lines: int = 0, total_char_budget: int = 8000) -> str:
+    """Read multiple text files from the server concurrently and token-efficiently.
+
+    Files are fetched in parallel (not sequentially), so many files can be read without
+    bottlenecking on slow requests. To keep total output small regardless of how many
+    files are requested, total_char_budget (default 8000) is split evenly across all
+    files unless lines > 0 is given, in which case each file returns its last N lines
+    instead. Repeated consecutive log lines are collapsed into one line + a count.
+
+    Returns results concatenated together, each labeled with its file path.
+    """
+
+    if not file_paths:
+        return "No file paths provided."
+
+    per_file_chars = 0 if lines > 0 else max(500, total_char_budget // len(file_paths))
+
+    results: dict[str, str] = {}
+
+    with ThreadPoolExecutor(max_workers=min(len(file_paths), 8)) as executor:
+        future_to_path = {
+            executor.submit(_fetch_and_truncate_file, path, lines, per_file_chars): path
+            for path in file_paths
+        }
+        for future in as_completed(future_to_path):
+            path = future_to_path[future]
+            try:
+                results[path] = future.result()
+            except Exception as e:
+                results[path] = f"Failed to read file: {e}"
+
+    sections = []
+    for path in file_paths:
+        normalized = path if path.startswith("/") else "/" + path
+        sections.append(f"===== {normalized} =====\n{results.get(path, 'No result')}")
+
+    return "\n\n".join(sections)
 
 
 @mcp.tool()
