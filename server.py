@@ -1,5 +1,4 @@
 import os
-import base64
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from mcp.server import MCPServer
@@ -120,7 +119,7 @@ def _collapse_repeated_lines(text: str) -> str:
     return "\n".join(out)
 
 
-def _fetch_and_truncate_file(file_path: str, lines: int = 0, max_chars: int = 4000) -> str:
+def _fetch_and_truncate_file(file_path: str, lines: int = 0, max_chars: int = 20000) -> str:
     """Shared logic: fetch a single file's contents, collapse repeated lines, and
     truncate per lines/max_chars rules to keep output compact."""
 
@@ -158,11 +157,11 @@ def _fetch_and_truncate_file(file_path: str, lines: int = 0, max_chars: int = 40
 
 
 @mcp.tool()
-def read_server_file(file_path: str, lines: int = 0, max_chars: int = 4000) -> str:
+def read_server_file(file_path: str, lines: int = 0, max_chars: int = 20000) -> str:
     """Read a text file from the server (e.g., /server.properties or /logs/latest.log).
 
     Token-efficient by default: returns only the END of the file capped at max_chars
-    characters (default 4000, tune lower/higher as needed), and collapses runs of
+    characters (default 20000, tune lower/higher as needed), and collapses runs of
     3+ identical consecutive lines (common in spammy logs) into one line + a count.
     Pass lines > 0 to instead return just the last N lines. Pass max_chars=0 for the
     full file (use sparingly - can consume a lot of tokens).
@@ -213,7 +212,7 @@ def read_server_files(file_paths: list[str], lines: int = 0, total_char_budget: 
 @mcp.tool()
 def write_server_file(file_path: str, content: str) -> str:
     """Write or overwrite a TEXT file on the server. If the file does not exist, it will
-    be created. Do NOT use this for binary files like .jar plugins - use upload_binary_file
+    be created. Do NOT use this for binary files like .jar plugins - use pull_file_from_url
     or install_plugin_from_url instead, since text writes will corrupt binary data."""
 
     if not file_path.startswith("/"):
@@ -259,7 +258,63 @@ def delete_server_file(file_path: str) -> str:
 
 
 @mcp.tool()
-def list_directory(directory_path: str = "/") -> str:
+def move_server_file(file_path: str, destination_path: str) -> str:
+    """Move or rename a file/folder on the server. Provide the full current path and the
+    full new path (e.g. move_server_file('/world/old.log', '/backups/old.log') or rename
+    in place with move_server_file('/plugins/foo.jar', '/plugins/foo.jar.disabled'))."""
+
+    if not file_path.startswith("/"):
+        file_path = "/" + file_path
+    if not destination_path.startswith("/"):
+        destination_path = "/" + destination_path
+
+    root_dir = os.path.dirname(file_path)
+    file_name = os.path.basename(file_path)
+    if not root_dir:
+        root_dir = "/"
+
+    # Pterodactyl's rename "to" is relative to root, so strip the shared root prefix
+    dest_to = destination_path
+    if root_dir != "/" and destination_path.startswith(root_dir + "/"):
+        dest_to = destination_path[len(root_dir) + 1:]
+    elif root_dir == "/" and destination_path.startswith("/"):
+        dest_to = destination_path[1:]
+
+    url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/rename"
+
+    response = requests.put(
+        url,
+        headers={**HEADERS, "Content-Type": "application/json"},
+        json={"root": root_dir, "files": [{"from": file_name, "to": dest_to}]},
+    )
+
+    if response.status_code == 204:
+        return f"Successfully moved {file_path} -> {destination_path}"
+    return f"Failed to move file: {response.text}"
+
+
+@mcp.tool()
+def get_file_download_url(file_path: str) -> str:
+    """Get a temporary signed download URL for a file on the server, so it can be
+    downloaded directly (e.g. to hand to a user, or to feed into another tool)."""
+
+    if not file_path.startswith("/"):
+        file_path = "/" + file_path
+
+    url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/download"
+
+    response = requests.get(url, headers=HEADERS, params={"file": file_path})
+
+    if response.status_code != 200:
+        return f"Failed to get download URL: {response.text}"
+
+    signed_url = response.json().get("attributes", {}).get("url", "")
+    if not signed_url:
+        return "Failed to get download URL: no URL returned."
+    return f"Download URL for {file_path} (temporary, expires shortly):\n{signed_url}"
+
+
+
     """List files and folders inside a directory on the server (e.g. '/plugins' or '/').
     Useful for checking what plugins are currently installed."""
 
@@ -293,32 +348,39 @@ def list_directory(directory_path: str = "/") -> str:
 # ---------------------------------------------------------------------------
 # Files - binary (plugins, etc)
 # ---------------------------------------------------------------------------
+# Note: no base64-upload tool here on purpose - passing binary file content through
+# the model as base64 text burns huge amounts of tokens. Use pull_file_from_url or
+# install_plugin_from_url instead, which download server-side from a URL and never
+# put the file bytes in the conversation.
 
 @mcp.tool()
-def upload_binary_file(file_path: str, base64_content: str) -> str:
-    """Upload a binary file (like a .jar plugin) to the server, given base64-encoded content.
-    Use this instead of write_server_file for any non-text file (jars, zips, images, etc)."""
+def pull_file_from_url(download_url: str, destination_path: str) -> str:
+    """Download a file from any direct URL and write it to any path on the server.
+    Generic version of install_plugin_from_url - not limited to /plugins or .jar files.
+    Use this for datapacks, worlds, resource packs, configs, etc. The file is streamed
+    through this server and written via the panel's binary write endpoint."""
 
-    if not file_path.startswith("/"):
-        file_path = "/" + file_path
+    if not destination_path.startswith("/"):
+        destination_path = "/" + destination_path
 
     try:
-        raw_bytes = base64.b64decode(base64_content)
+        dl_response = requests.get(download_url, timeout=120)
+        dl_response.raise_for_status()
     except Exception as e:
-        return f"Failed to decode base64 content: {e}"
+        return f"Failed to download from URL: {e}"
 
     url = f"{PANEL_URL}/api/client/servers/{SERVER_ID}/files/write"
 
     response = requests.post(
         url,
         headers={**HEADERS, "Content-Type": "application/octet-stream"},
-        params={"file": file_path},
-        data=raw_bytes,
+        params={"file": destination_path},
+        data=dl_response.content,
     )
 
     if response.status_code == 204:
-        return f"Successfully uploaded {file_path} ({len(raw_bytes)} bytes)"
-    return f"Failed to upload file: {response.text}"
+        return f"Successfully pulled {destination_path} ({len(dl_response.content)} bytes)"
+    return f"Failed to write pulled file: {response.text}"
 
 
 @mcp.tool()
