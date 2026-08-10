@@ -99,8 +99,13 @@ def get_server_status() -> str:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def read_server_file(file_path: str) -> str:
-    """Read a text file from the server (e.g., /server.properties or /logs/latest.log)."""
+def read_server_file(file_path: str, lines: int = 0, max_chars: int = 20000) -> str:
+    """Read a text file from the server (e.g., /server.properties or /logs/latest.log).
+
+    By default this returns only the END of the file, capped at max_chars characters,
+    to avoid flooding the conversation with huge logs. Pass lines > 0 to instead return
+    just the last N lines of the file. Pass max_chars=0 for no character cap (full file).
+    """
 
     if not file_path.startswith("/"):
         file_path = "/" + file_path
@@ -109,9 +114,30 @@ def read_server_file(file_path: str) -> str:
 
     response = requests.get(url, headers=HEADERS, params={"file": file_path})
 
-    if response.status_code == 200:
-        return response.text
-    return f"Failed to read file: {response.text}"
+    if response.status_code != 200:
+        return f"Failed to read file: {response.text}"
+
+    content = response.text
+    original_len = len(content)
+
+    if lines > 0:
+        split_lines = content.splitlines()
+        truncated = len(split_lines) > lines
+        selected = split_lines[-lines:]
+        result = "\n".join(selected)
+        if truncated:
+            result = f"...[truncated, showing last {lines} lines of {len(split_lines)}]...\n" + result
+        return result
+
+    if max_chars and original_len > max_chars:
+        tail = content[-max_chars:]
+        return (
+            f"...[truncated, showing last {max_chars} of {original_len} characters. "
+            f"Use lines=N for a specific number of lines, or max_chars=0 for the full file]...\n"
+            f"{tail}"
+        )
+
+    return content
 
 
 @mcp.tool()
